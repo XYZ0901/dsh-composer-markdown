@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "输入框 Markdown 预览",
+    "description": "输入时在输入框上方实时渲染 Markdown 预览，可在输入框工具行切换显示。"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Composer markdown preview",
+    "description": "Renders the composer draft as formatted Markdown above the input as you type, with a toggle in the composer tool row."
+  }
+}

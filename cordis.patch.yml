@@ -1,0 +1,6 @@
+# Composer Markdown preview: one bundle row.
+# The Host half (index.js) is inert; the Client half (client.js) registers the
+# toggle in the composer tool row and the preview panel above the composer card.
+- insert:
+    - id: composer-markdown
+      name: '@xyz2zyx/composer-markdown'

@@ -1,0 +1,35 @@
+{
+  "format": 1,
+  "title": { "en": "XYZ0901 DSH plugins", "zh": "XYZ0901 的 DSH 插件" },
+  "description": {
+    "en": "Bundles published by XYZ0901 for the DSH Web GUI.",
+    "zh": "XYZ0901 发布的 DSH Web GUI 插件。"
+  },
+  "plugins": [
+    {
+      "name": "@xyz2zyx/composer-markdown",
+      "title": { "en": "Composer markdown preview", "zh": "输入框 Markdown 预览" },
+      "description": {
+        "en": "Renders the composer draft as Markdown above the input as you type, with a toggle in the composer tool row.",
+        "zh": "输入时在输入框上方实时渲染 Markdown，可在输入框工具行切换显示。"
+      },
+      "author": "XYZ0901",
+      "homepage": "https://github.com/XYZ0901/dsh-composer-markdown",
+      "repository": {
+        "url": "https://github.com/XYZ0901/dsh-composer-markdown"
+      },
+      "icon": "icon.svg",
+      "metadata": {
+        "keywords": ["markdown", "composer", "preview", "editor"]
+      },
+      "versions": [
+        {
+          "version": "1.0.0",
+          "publishTimestamp": 1762992000,
+          "source": { "type": "npm" },
+          "engines": { "dsh": ">=0.2.2-rc.1" }
+        }
+      ]
+    }
+  ]
+}
