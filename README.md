@@ -10,6 +10,10 @@ exact Markdown source.
 
 - Renders the current draft as Markdown in a compact panel directly above the
   composer card, on every keystroke.
+- A formatting toolbar inside that panel writes Markdown back into the draft:
+  bold, italic, strikethrough, inline code, link, heading, quote, bulleted,
+  numbered and task lists, code block, table and horizontal rule. With a
+  selection the inline formats wrap it; block formats start on their own line.
 - A `M↓` toggle in the composer tool row turns it on and off. The choice is
   kept in `localStorage` under `dsh.composer-markdown.preview`.
 - The draft is never modified. The panel is a read-only projection of
@@ -66,6 +70,9 @@ into bold would silently send `x`.
 
 - 每次按键都会重新渲染；输入框工具行左侧的 `M↓` 开关控制显隐，状态存在
   `localStorage` 的 `dsh.composer-markdown.preview`。
+- 面板内有格式化工具条，直接改写草稿：粗体、斜体、删除线、行内代码、链接、
+  标题、引用、无序/有序/任务列表、代码块、表格、分隔线。行内格式会包裹当前
+  选区，块级格式单独起一行。
 - 支持标题、段落、粗体/斜体/删除线、行内代码、围栏代码块、有序/无序/嵌套/
   任务列表、引用、表格（含对齐）、链接、自动链接、裸链接、图片（显示为带标签
   的链接块）、分隔线与硬换行。

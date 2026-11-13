@@ -636,7 +636,117 @@ window.__ModuleLoader__.load({
             '×',
           ),
         ),
+        h(MarkdownFormatToolbar, {
+          key: 'tools',
+          t,
+          input: props.input,
+          inputActions: props.inputActions,
+        }),
         h('div', { className: 'cm-md-body' }, nodes),
+      );
+    }
+
+    /* ------------------------------------------------------------------ *
+     * Formatting toolbar: inserts Markdown through the composer actions
+     * ------------------------------------------------------------------ */
+
+    /** Inline wrappers: the selection, or a sample, is surrounded by the pair. */
+    const INLINE_FORMATS = {
+      bold: { open: '**', close: '**', sample: '加粗文字', label: 'B' },
+      italic: { open: '*', close: '*', sample: '斜体文字', label: 'I' },
+      strike: { open: '~~', close: '~~', sample: '删除线', label: 'S' },
+      code: { open: '`', close: '`', sample: 'code', label: '<>' },
+      link: { open: '[', close: '](https://)', sample: '链接文字', label: '[]' },
+    };
+
+    /** Block templates: inserted at the caret, on a line of their own. */
+    const BLOCK_FORMATS = {
+      heading: { text: '## 标题', label: 'H2' },
+      quote: { text: '> 引用', label: '>_' },
+      bullet: { text: '- 列表项', label: '•' },
+      ordered: { text: '1. 列表项', label: '1.' },
+      task: { text: '- [ ] 待办', label: '☐' },
+      fence: { text: '```\n代码\n```', label: '{ }' },
+      table: { text: '| 列 1 | 列 2 |\n| --- | --- |\n| 内容 | 内容 |', label: '▦' },
+      rule: { text: '---', label: '—' },
+    };
+
+    const FORMAT_ORDER = [
+      'bold', 'italic', 'strike', 'code', 'link',
+      'heading', 'quote', 'bullet', 'ordered', 'task', 'fence', 'table', 'rule',
+    ];
+
+    /**
+     * Replacement text for one format button.
+     * @param kind - entry in INLINE_FORMATS or BLOCK_FORMATS.
+     * @param draft - the composer draft the offsets address.
+     * @param start - captured selection start (detect coordinates).
+     * @param end - captured selection end.
+     * @param chips - the draft carries reference chips, so offsets cannot be
+     *   mapped onto the draft string; only sample insertion is safe.
+     */
+    function buildFormatEdit(kind, draft, start, end, chips) {
+      const inline = INLINE_FORMATS[kind];
+      if (inline !== undefined) {
+        const selected = chips || end <= start ? '' : String(draft).slice(start, end);
+        return inline.open + (selected === '' ? inline.sample : selected) + inline.close;
+      }
+      const block = BLOCK_FORMATS[kind];
+      if (block === undefined) return '';
+      const atLineStart = chips
+        ? false
+        : start === 0 || String(draft).slice(String(draft).lastIndexOf('\n', start - 1) + 1, start).trim() === '';
+      return atLineStart ? block.text : '\n' + block.text;
+    }
+
+    /** One button per format; clicks edit the draft through the shell actions. */
+    function MarkdownFormatToolbar(props) {
+      const t = props.t;
+      const input = props.input;
+      const actions = props.inputActions;
+      const phase = input !== undefined && typeof input.phase === 'string' ? input.phase : '';
+      const frozen = phase === 'adjudicating' || phase === 'submitting' || phase === 'sending';
+      const ready =
+        actions !== undefined &&
+        typeof actions.captureInsertion === 'function' &&
+        typeof actions.insertText === 'function';
+      if (!ready) return null;
+
+      const apply = (kind) => {
+        try {
+          const draft = input !== undefined && typeof input.draft === 'string' ? input.draft : '';
+          const occurrences = input !== undefined && Array.isArray(input.occurrences) ? input.occurrences : [];
+          const span = actions.captureInsertion();
+          if (span === undefined || span === null) return;
+          const text = buildFormatEdit(kind, draft, span.start, span.end, occurrences.length > 0);
+          if (text === '') return;
+          actions.insertText(text, span);
+        } catch (error) {
+          /* A refused edit is harmless: the next capture is current again. */
+        }
+      };
+
+      return h(
+        'div',
+        { className: 'cm-md-tools', role: 'toolbar', 'aria-label': t('preview.tools') },
+        FORMAT_ORDER.map((kind) => {
+          const definition = INLINE_FORMATS[kind] !== undefined ? INLINE_FORMATS[kind] : BLOCK_FORMATS[kind];
+          const name = t('fmt.' + kind);
+          return h(
+            'button',
+            {
+              key: kind,
+              type: 'button',
+              className: 'cm-md-tool',
+              title: name,
+              'aria-label': name,
+              disabled: frozen,
+              onMouseDown: (event) => event.preventDefault(),
+              onClick: () => apply(kind),
+            },
+            definition.label,
+          );
+        }),
       );
     }
 
@@ -672,7 +782,12 @@ window.__ModuleLoader__.load({
 .cm-md-hide{display:grid;place-items:center;width:20px;height:20px;padding:0;border:0;border-radius:6px;background:0 0;color:inherit;font-size:15px;line-height:1;cursor:pointer;flex:none}
 .cm-md-hide:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary)}
 .cm-md-hide:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}
-.cm-md-body{max-height:32vh;overflow-y:auto;padding:2px 14px 12px;color:var(--dsw-alias-label-primary);font-size:var(--dsh-content-font-size,13px);line-height:1.65;overflow-wrap:anywhere;border-top:.5px solid var(--dsw-alias-border-l1);--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2)}
+.cm-md-tools{display:flex;flex-wrap:wrap;align-items:center;gap:2px;padding:2px 8px 4px;border-top:.5px solid var(--dsw-alias-border-l1);border-bottom:.5px solid var(--dsw-alias-border-l1)}
+.cm-md-tool{min-width:24px;height:22px;padding:0 5px;border:0;border-radius:6px;background:0 0;color:var(--dsw-alias-label-secondary);font-family:var(--ds-font-family-code,ui-monospace,SFMono-Regular,Menlo,monospace);font-size:11px;font-weight:600;line-height:1;cursor:pointer;display:inline-grid;place-items:center}
+.cm-md-tool:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.cm-md-tool:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}
+.cm-md-tool:disabled{opacity:.4;cursor:default}
+.cm-md-body{max-height:32vh;overflow-y:auto;padding:2px 14px 12px;color:var(--dsw-alias-label-primary);font-size:var(--dsh-content-font-size,13px);line-height:1.65;overflow-wrap:anywhere;--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2)}
 .cm-md-body>*:first-child{margin-top:8px}
 .cm-md-body>*:last-child{margin-bottom:0}
 .cm-md-body p{margin:0 0 .55em}
@@ -734,12 +849,40 @@ window.__ModuleLoader__.load({
             en: {
               'preview.title': 'Markdown preview',
               'preview.hide': 'Hide markdown preview',
+              'preview.tools': 'Markdown formatting',
+              'fmt.bold': 'Bold',
+              'fmt.italic': 'Italic',
+              'fmt.strike': 'Strikethrough',
+              'fmt.code': 'Inline code',
+              'fmt.link': 'Link',
+              'fmt.heading': 'Heading',
+              'fmt.quote': 'Quote',
+              'fmt.bullet': 'Bulleted list',
+              'fmt.ordered': 'Numbered list',
+              'fmt.task': 'Task list',
+              'fmt.fence': 'Code block',
+              'fmt.table': 'Table',
+              'fmt.rule': 'Horizontal rule',
               'toggle.on': 'Markdown preview: on',
               'toggle.off': 'Markdown preview: off',
             },
             zh: {
               'preview.title': 'Markdown 预览',
               'preview.hide': '隐藏 Markdown 预览',
+              'preview.tools': 'Markdown 格式',
+              'fmt.bold': '粗体',
+              'fmt.italic': '斜体',
+              'fmt.strike': '删除线',
+              'fmt.code': '行内代码',
+              'fmt.link': '链接',
+              'fmt.heading': '标题',
+              'fmt.quote': '引用',
+              'fmt.bullet': '无序列表',
+              'fmt.ordered': '有序列表',
+              'fmt.task': '任务列表',
+              'fmt.fence': '代码块',
+              'fmt.table': '表格',
+              'fmt.rule': '分隔线',
               'toggle.on': 'Markdown 预览已开启',
               'toggle.off': 'Markdown 预览已关闭',
             },
