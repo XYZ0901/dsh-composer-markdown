@@ -10,6 +10,9 @@ exact Markdown source.
 
 - Renders the current draft as Markdown in a compact panel directly above the
   composer card, on every keystroke.
+- The panel header's `⤢` button opens the same preview as a **right-sidebar
+  tab**, for a larger reading pane; the tab is a page type registered through
+  `ctx.sidebarRightTabs` and opened with `ctx.sidebarRight.openTab`.
 - A formatting toolbar inside that panel writes Markdown back into the draft:
   bold, italic, strikethrough, inline code, link, heading, quote, bulleted,
   numbered and task lists, code block, table and horizontal rule. With a
@@ -70,6 +73,8 @@ into bold would silently send `x`.
 
 - 每次按键都会重新渲染；输入框工具行左侧的 `M↓` 开关控制显隐，状态存在
   `localStorage` 的 `dsh.composer-markdown.preview`。
+- 面板头部的 `⤢` 按钮可把同一份预览**开到右侧栏**（标签页形式），阅读面积更大；
+  该标签页通过 `ctx.sidebarRightTabs` 注册类型、`ctx.sidebarRight.openTab` 打开。
 - 面板内有格式化工具条，直接改写草稿：粗体、斜体、删除线、行内代码、链接、
   标题、引用、无序/有序/任务列表、代码块、表格、分隔线。行内格式会包裹当前
   选区，块级格式单独起一行。

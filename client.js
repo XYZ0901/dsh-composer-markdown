@@ -54,6 +54,11 @@ window.__ModuleLoader__.load({
       return value;
     }
 
+    /** Opens the right-sidebar preview tab; null when the sidebar face is absent. */
+    let openSidebarPreview = null;
+    /** Identity selector for the whole InputState. */
+    const selectInput = (state) => state;
+
     /* ------------------------------------------------------------------ *
      * Markdown: inline level
      * ------------------------------------------------------------------ */
@@ -623,6 +628,22 @@ window.__ModuleLoader__.load({
           { className: 'cm-md-head' },
           h('span', { className: 'cm-md-badge', 'aria-hidden': true }, 'MD'),
           h('span', { className: 'cm-md-title' }, t('preview.title')),
+          openSidebarPreview === null
+            ? null
+            : h(
+                'button',
+                {
+                  type: 'button',
+                  className: 'cm-md-hide',
+                  title: t('sidebar.open'),
+                  'aria-label': t('sidebar.open'),
+                  onMouseDown: (event) => event.preventDefault(),
+                  onClick: () => {
+                    if (openSidebarPreview !== null) openSidebarPreview();
+                  },
+                },
+                '⤢',
+              ),
           h(
             'button',
             {
@@ -750,6 +771,27 @@ window.__ModuleLoader__.load({
       );
     }
 
+    /** The same preview rendered as a right-sidebar tab body. */
+    function ComposerMarkdownSidebar(props) {
+      const t = translate(props);
+      const useInput = props.useInput;
+      const input = typeof useInput === 'function' ? useInput(selectInput) : undefined;
+      const draft = input !== undefined && typeof input.draft === 'string' ? input.draft : '';
+      const nodes = React.useMemo(
+        () => (draft.trim() === '' ? null : renderBlocks(draft, 'sb')),
+        [draft],
+      );
+      if (nodes === null) {
+        return h('div', { className: 'cm-md-pane' }, h('p', { className: 'cm-md-pane-empty' }, t('sidebar.empty')));
+      }
+      return h(
+        'div',
+        { className: 'cm-md-pane' },
+        h(MarkdownFormatToolbar, { key: 'tools', t, input, inputActions: props.inputActions }),
+        h('div', { className: 'cm-md-body' }, nodes),
+      );
+    }
+
     /** Compact on/off control in the composer tool row. */
     function ComposerMarkdownToggle(props) {
       const t = translate(props);
@@ -782,6 +824,10 @@ window.__ModuleLoader__.load({
 .cm-md-hide{display:grid;place-items:center;width:20px;height:20px;padding:0;border:0;border-radius:6px;background:0 0;color:inherit;font-size:15px;line-height:1;cursor:pointer;flex:none}
 .cm-md-hide:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary)}
 .cm-md-hide:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}
+.cm-md-pane{display:flex;flex-direction:column;height:100%;min-height:0;overflow-y:auto;padding:8px 14px 16px;color:var(--dsw-alias-label-primary);font-size:var(--dsh-content-font-size,14px);line-height:1.7;--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2)}
+.cm-md-pane .cm-md-tools{padding:0 0 6px;border-top:0;position:sticky;top:-8px;background:var(--dsw-alias-bg-base);z-index:1}
+.cm-md-pane .cm-md-body{max-height:none;overflow:visible;padding:6px 0 0}
+.cm-md-pane-empty{margin:8px 0;color:var(--dsw-alias-label-tertiary);font-size:13px;line-height:1.6}
 .cm-md-tools{display:flex;flex-wrap:wrap;align-items:center;gap:2px;padding:2px 8px 4px;border-top:.5px solid var(--dsw-alias-border-l1);border-bottom:.5px solid var(--dsw-alias-border-l1)}
 .cm-md-tool{min-width:24px;height:22px;padding:0 5px;border:0;border-radius:6px;background:0 0;color:var(--dsw-alias-label-secondary);font-family:var(--ds-font-family-code,ui-monospace,SFMono-Regular,Menlo,monospace);font-size:11px;font-weight:600;line-height:1;cursor:pointer;display:inline-grid;place-items:center}
 .cm-md-tool:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
@@ -850,6 +896,9 @@ window.__ModuleLoader__.load({
               'preview.title': 'Markdown preview',
               'preview.hide': 'Hide markdown preview',
               'preview.tools': 'Markdown formatting',
+              'sidebar.open': 'Open the preview in the right sidebar',
+              'sidebar.title': 'Composer preview',
+              'sidebar.empty': 'Nothing to preview yet: start typing in the composer.',
               'fmt.bold': 'Bold',
               'fmt.italic': 'Italic',
               'fmt.strike': 'Strikethrough',
@@ -870,6 +919,9 @@ window.__ModuleLoader__.load({
               'preview.title': 'Markdown 预览',
               'preview.hide': '隐藏 Markdown 预览',
               'preview.tools': 'Markdown 格式',
+              'sidebar.open': '在右侧栏打开预览',
+              'sidebar.title': '输入框预览',
+              'sidebar.empty': '还没有可预览的内容，先在输入框里写点什么。',
               'fmt.bold': '粗体',
               'fmt.italic': '斜体',
               'fmt.strike': '删除线',
@@ -900,6 +952,37 @@ window.__ModuleLoader__.load({
             ComposerMarkdownPreview,
           ),
         );
+
+        /* Right-sidebar preview: a page-type tab, opened by kind. The services
+         * are optional, so ctx.inject keeps the plugin active without them. */
+        ctx.inject(['sidebarRightTabs', 'sidebarRight'], (scope) => {
+          const tabs = scope.get('sidebarRightTabs');
+          const sidebarRight = scope.get('sidebarRight');
+          if (tabs === undefined || sidebarRight === undefined) return;
+          const typeId = '@xyz2zyx/composer-markdown/preview';
+          const kind = 'composer-markdown-preview';
+          const t = ctx.locale.bind(NS);
+          scope.effect(() =>
+            tabs.register({
+              id: typeId,
+              kind,
+              title: () => t('sidebar.title'),
+            }),
+          );
+          scope.effect(() =>
+            scope.slots.register({ name: 'sidebar.right.pane.tab', key: typeId }, ComposerMarkdownSidebar),
+          );
+          openSidebarPreview = () => {
+            try {
+              sidebarRight.openTab(kind);
+            } catch (error) {
+              /* No Session on screen: the sidebar owns that refusal. */
+            }
+          };
+          scope.effect(() => () => {
+            openSidebarPreview = null;
+          });
+        });
 
         ctx.slots.inject('conversation.input.left', () =>
           ctx.slots.register(
