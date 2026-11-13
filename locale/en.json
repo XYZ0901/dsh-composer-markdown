@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Composer markdown preview",
-    "description": "Renders the composer draft as formatted Markdown above the input or as a right-sidebar tab, with a formatting toolbar (bold, lists, tables, code fences and more)."
+    "description": "Renders the composer draft as formatted Markdown above the input or as a right-sidebar tab, with a formatting toolbar and an editable draft mode."
   }
 }

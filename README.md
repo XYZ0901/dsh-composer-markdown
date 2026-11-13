@@ -13,6 +13,10 @@ exact Markdown source.
 - The panel header's `⤢` button opens the same preview as a **right-sidebar
   tab**, for a larger reading pane; the tab is a page type registered through
   `ctx.sidebarRightTabs` and opened with `ctx.sidebarRight.openTab`.
+- That tab has an **Edit** mode: a plain textarea over the draft that writes
+  back through `inputActions.setDraft` on a 400 ms debounce. The composer keeps
+  owning the caret and undo history, so the write is a whole-draft replacement,
+  not an incremental edit.
 - A formatting toolbar inside that panel writes Markdown back into the draft:
   bold, italic, strikethrough, inline code, link, heading, quote, bulleted,
   numbered and task lists, code block, table and horizontal rule. With a
@@ -75,6 +79,9 @@ into bold would silently send `x`.
   `localStorage` 的 `dsh.composer-markdown.preview`。
 - 面板头部的 `⤢` 按钮可把同一份预览**开到右侧栏**（标签页形式），阅读面积更大；
   该标签页通过 `ctx.sidebarRightTabs` 注册类型、`ctx.sidebarRight.openTab` 打开。
+- 该标签页有**编辑模式**：直接在侧栏里写草稿，停止输入 400ms 后通过
+  `inputActions.setDraft` 整篇写回输入框；光标与撤销历史仍归 composer，
+  所以这是整篇替换而不是增量编辑。
 - 面板内有格式化工具条，直接改写草稿：粗体、斜体、删除线、行内代码、链接、
   标题、引用、无序/有序/任务列表、代码块、表格、分隔线。行内格式会包裹当前
   选区，块级格式单独起一行。

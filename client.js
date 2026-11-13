@@ -6,6 +6,8 @@ window.__ModuleLoader__.load({
 
     /** Locale namespace; also the `locale` option of both slot registrations. */
     const NS = 'composer-markdown';
+    /** Build marker shown in the sidebar tab. */
+    const VERSION = '1.3.5';
     /** Page-local on/off switch shared by the tool-row toggle and the panel. */
     const PREF_STORAGE_KEY = 'dsh.composer-markdown.preview';
     const STYLE_TAG_ID = '@xyz2zyx/composer-markdown/client.css';
@@ -628,22 +630,21 @@ window.__ModuleLoader__.load({
           { className: 'cm-md-head' },
           h('span', { className: 'cm-md-badge', 'aria-hidden': true }, 'MD'),
           h('span', { className: 'cm-md-title' }, t('preview.title')),
-          openSidebarPreview === null
-            ? null
-            : h(
-                'button',
-                {
-                  type: 'button',
-                  className: 'cm-md-hide',
-                  title: t('sidebar.open'),
-                  'aria-label': t('sidebar.open'),
-                  onMouseDown: (event) => event.preventDefault(),
-                  onClick: () => {
-                    if (openSidebarPreview !== null) openSidebarPreview();
-                  },
-                },
-                '⤢',
-              ),
+          h(
+            'button',
+            {
+              type: 'button',
+              className: 'cm-md-hide',
+              disabled: openSidebarPreview === null,
+              title: openSidebarPreview === null ? t('sidebar.unavailable') : t('sidebar.open'),
+              'aria-label': openSidebarPreview === null ? t('sidebar.unavailable') : t('sidebar.open'),
+              onMouseDown: (event) => event.preventDefault(),
+              onClick: () => {
+                if (openSidebarPreview !== null) openSidebarPreview();
+              },
+            },
+            '⤢',
+          ),
           h(
             'button',
             {
@@ -725,15 +726,22 @@ window.__ModuleLoader__.load({
       const t = props.t;
       const input = props.input;
       const actions = props.inputActions;
+      const onFormat = props.onFormat;
+      const local = typeof onFormat === 'function';
       const phase = input !== undefined && typeof input.phase === 'string' ? input.phase : '';
       const frozen = phase === 'adjudicating' || phase === 'submitting' || phase === 'sending';
       const ready =
-        actions !== undefined &&
-        typeof actions.captureInsertion === 'function' &&
-        typeof actions.insertText === 'function';
+        local ||
+        (actions !== undefined &&
+          typeof actions.captureInsertion === 'function' &&
+          typeof actions.insertText === 'function');
       if (!ready) return null;
 
       const apply = (kind) => {
+        if (local) {
+          onFormat(kind);
+          return;
+        }
         try {
           const draft = input !== undefined && typeof input.draft === 'string' ? input.draft : '';
           const occurrences = input !== undefined && Array.isArray(input.occurrences) ? input.occurrences : [];
@@ -761,7 +769,7 @@ window.__ModuleLoader__.load({
               className: 'cm-md-tool',
               title: name,
               'aria-label': name,
-              disabled: frozen,
+              disabled: frozen || props.disabled === true,
               onMouseDown: (event) => event.preventDefault(),
               onClick: () => apply(kind),
             },
@@ -771,24 +779,194 @@ window.__ModuleLoader__.load({
       );
     }
 
-    /** The same preview rendered as a right-sidebar tab body. */
+    /**
+     * The right-sidebar tab body: a preview, or an editable draft that writes
+     * back through `inputActions.setDraft` on a short debounce.
+     */
     function ComposerMarkdownSidebar(props) {
       const t = translate(props);
       const useInput = props.useInput;
       const input = typeof useInput === 'function' ? useInput(selectInput) : undefined;
       const draft = input !== undefined && typeof input.draft === 'string' ? input.draft : '';
+      const actions = props.inputActions;
+      const canEdit = actions !== undefined && typeof actions.setDraft === 'function';
+      const phase = input !== undefined && typeof input.phase === 'string' ? input.phase : '';
+      const frozen = phase === 'adjudicating' || phase === 'submitting' || phase === 'sending';
+
+      const [editing, setEditing] = React.useState(false);
+      const [value, setValue] = React.useState(draft);
+      const latest = React.useRef(draft);
+      const area = React.useRef(null);
+      const writing = React.useRef(null);
+      const writtenAt = React.useRef(0);
+      const timer = React.useRef(null);
+      const composing = React.useRef(false);
+
+      /* Adopt composer-side edits, but not the echo of our own write. */
+      React.useEffect(() => {
+        if (writing.current === draft) return;
+        if (Date.now() - writtenAt.current < 800) return;
+        latest.current = draft;
+        setValue(draft);
+      }, [draft]);
+
+      React.useEffect(() => () => {
+        if (timer.current !== null) clearTimeout(timer.current);
+      }, []);
+
+      const flush = (text) => {
+        if (!canEdit) return;
+        writing.current = text;
+        writtenAt.current = Date.now();
+        try {
+          actions.setDraft(text);
+        } catch (error) {
+          /* The composer refused the write; the next edit retries. */
+        }
+      };
+
+      const schedule = () => {
+        if (timer.current !== null) clearTimeout(timer.current);
+        timer.current = setTimeout(() => {
+          timer.current = null;
+          flush(latest.current);
+        }, 400);
+      };
+
+      const commit = (next) => {
+        latest.current = next;
+        setValue(next);
+      };
+
+      /**
+       * Apply one format to the textarea's own selection, then schedule the
+       * write-back. Unlike the composer path this keeps a real caret: an inline
+       * format selects the wrapped text so typing replaces it.
+       */
+      const applyFormat = (kind) => {
+        const text = latest.current;
+        const node = area.current;
+        const start = node !== null && typeof node.selectionStart === 'number' ? node.selectionStart : text.length;
+        const end = node !== null && typeof node.selectionEnd === 'number' ? node.selectionEnd : start;
+        const inline = INLINE_FORMATS[kind];
+        let next = '';
+        let selStart = start;
+        let selEnd = start;
+        if (inline !== undefined) {
+          const selected = end > start ? text.slice(start, end) : '';
+          const inner = selected === '' ? inline.sample : selected;
+          next = text.slice(0, start) + inline.open + inner + inline.close + text.slice(end);
+          selStart = start + inline.open.length;
+          selEnd = selStart + inner.length;
+        } else {
+          const block = BLOCK_FORMATS[kind];
+          if (block === undefined) return;
+          const atLineStart =
+            start === 0 || text.slice(text.lastIndexOf('\n', start - 1) + 1, start).trim() === '';
+          const insert = atLineStart ? block.text : '\n' + block.text;
+          next = text.slice(0, start) + insert + text.slice(end);
+          selStart = start + insert.length;
+          selEnd = selStart;
+        }
+        commit(next);
+        schedule();
+        const restore = () => {
+          const el = area.current;
+          if (el === null) return;
+          el.focus();
+          el.setSelectionRange(selStart, selEnd);
+        };
+        if (typeof requestAnimationFrame === 'function') requestAnimationFrame(restore);
+        else setTimeout(restore, 0);
+      };
+
       const nodes = React.useMemo(
         () => (draft.trim() === '' ? null : renderBlocks(draft, 'sb')),
         [draft],
       );
-      if (nodes === null) {
-        return h('div', { className: 'cm-md-pane' }, h('p', { className: 'cm-md-pane-empty' }, t('sidebar.empty')));
+
+      const onInput = (event) => {
+        commit(event.target.value);
+        if (composing.current) return;
+        schedule();
+      };
+      const onCompositionStart = () => {
+        composing.current = true;
+      };
+      const onCompositionEnd = (event) => {
+        composing.current = false;
+        commit(event.target.value);
+        schedule();
+      };
+
+      const bar = h(
+        'div',
+        { className: 'cm-md-pane-bar' },
+        h(
+          'button',
+          {
+            type: 'button',
+            className: 'cm-md-pane-mode',
+            'aria-pressed': editing ? 'true' : 'false',
+            disabled: !canEdit,
+            title: !canEdit ? t('sidebar.noedit') : editing ? t('sidebar.preview') : t('sidebar.edit'),
+            onClick: () => {
+              if (canEdit) setEditing(!editing);
+            },
+          },
+          editing ? t('sidebar.preview') : t('sidebar.edit'),
+        ),
+        canEdit
+          ? null
+          : h('span', { className: 'cm-md-pane-note' }, t('sidebar.noedit')),
+        h('span', { className: 'cm-md-pane-state' }, t('sidebar.chars', { n: String(value.length) }), ' · v', VERSION),
+      );
+
+      if (editing) {
+        return h(
+          'div',
+          { className: 'cm-md-pane' },
+          bar,
+          h(
+            'div',
+            { className: 'cm-md-pane-tools' },
+            h(MarkdownFormatToolbar, {
+              key: 'tools',
+              t,
+              onFormat: applyFormat,
+              disabled: !canEdit || frozen,
+            }),
+          ),
+          h(
+            'div',
+            { className: 'cm-md-pane-body' },
+            h('textarea', {
+              ref: area,
+              className: 'cm-md-pane-editor',
+              value,
+              spellCheck: false,
+              disabled: !canEdit || frozen,
+              placeholder: t('sidebar.placeholder'),
+              onChange: onInput,
+              onCompositionStart,
+              onCompositionEnd,
+            }),
+          ),
+        );
       }
+
       return h(
         'div',
         { className: 'cm-md-pane' },
-        h(MarkdownFormatToolbar, { key: 'tools', t, input, inputActions: props.inputActions }),
-        h('div', { className: 'cm-md-body' }, nodes),
+        bar,
+        h(
+          'div',
+          { className: 'cm-md-pane-body' },
+          nodes === null
+            ? h('p', { className: 'cm-md-pane-empty' }, t('sidebar.empty'))
+            : h(MarkdownFormatToolbar, { key: 'tools', t, input, inputActions: actions }),
+          nodes === null ? null : h('div', { className: 'cm-md-body' }, nodes),
+        ),
       );
     }
 
@@ -824,8 +1002,21 @@ window.__ModuleLoader__.load({
 .cm-md-hide{display:grid;place-items:center;width:20px;height:20px;padding:0;border:0;border-radius:6px;background:0 0;color:inherit;font-size:15px;line-height:1;cursor:pointer;flex:none}
 .cm-md-hide:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary)}
 .cm-md-hide:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-2px}
-.cm-md-pane{display:flex;flex-direction:column;height:100%;min-height:0;overflow-y:auto;padding:8px 14px 16px;color:var(--dsw-alias-label-primary);font-size:var(--dsh-content-font-size,14px);line-height:1.7;--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2)}
-.cm-md-pane .cm-md-tools{padding:0 0 6px;border-top:0;position:sticky;top:-8px;background:var(--dsw-alias-bg-base);z-index:1}
+.cm-md-pane{display:flex;flex-direction:column;height:100%;min-height:0;overflow:hidden;color:var(--dsw-alias-label-primary);font-size:var(--dsh-content-font-size,14px);line-height:1.7;--dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l2);--dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l2)}
+.cm-md-pane-body{flex:1;min-height:0;overflow-y:auto;padding:10px 14px 16px}
+.cm-md-pane-tools{flex:none;padding:10px 14px 8px}
+.cm-md-pane-tools .cm-md-tools{padding:0}
+.cm-md-pane-tools .cm-md-tool{border:.5px solid var(--dsw-alias-border-l1)}
+.cm-md-pane .cm-md-tools{padding:0 0 6px;border-top:0}
+.cm-md-pane-bar{flex:none;display:flex;align-items:center;gap:8px;padding:6px 14px;border-bottom:.5px solid var(--dsw-alias-border-l1)}
+.cm-md-pane-mode{height:22px;padding:0 8px;border:.5px solid var(--dsw-alias-border-l2);border-radius:6px;background:0 0;color:var(--dsw-alias-label-secondary);font-family:inherit;font-size:12px;line-height:1;cursor:pointer}
+.cm-md-pane-mode:hover{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.cm-md-pane-mode[aria-pressed="true"]{border-color:var(--dsw-alias-state-business-primary);color:var(--dsw-alias-state-business-primary)}
+.cm-md-pane-note{color:var(--dsw-alias-state-warn-primary);font-size:11px;line-height:1.4}
+.cm-md-pane-state{margin-left:auto;color:var(--dsw-alias-label-tertiary);font-size:11px;font-variant-numeric:tabular-nums}
+.cm-md-pane-editor{box-sizing:border-box;width:100%;height:100%;min-height:240px;padding:8px 10px;border:.5px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-md);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font-family:var(--ds-font-family-code,ui-monospace,SFMono-Regular,Menlo,monospace);font-size:13px;line-height:1.7;resize:vertical}
+.cm-md-pane-editor:focus-visible{outline:var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:-1px}
+.cm-md-pane-editor:disabled{opacity:.6;cursor:not-allowed}
 .cm-md-pane .cm-md-body{max-height:none;overflow:visible;padding:6px 0 0}
 .cm-md-pane-empty{margin:8px 0;color:var(--dsw-alias-label-tertiary);font-size:13px;line-height:1.6}
 .cm-md-tools{display:flex;flex-wrap:wrap;align-items:center;gap:2px;padding:2px 8px 4px;border-top:.5px solid var(--dsw-alias-border-l1);border-bottom:.5px solid var(--dsw-alias-border-l1)}
@@ -899,6 +1090,12 @@ window.__ModuleLoader__.load({
               'sidebar.open': 'Open the preview in the right sidebar',
               'sidebar.title': 'Composer preview',
               'sidebar.empty': 'Nothing to preview yet: start typing in the composer.',
+              'sidebar.edit': 'Edit mode',
+              'sidebar.preview': 'Preview mode',
+              'sidebar.chars': '{n} characters',
+              'sidebar.noedit': 'Editing needs a live composer in this session.',
+              'sidebar.unavailable': 'The right sidebar is unavailable in this composition.',
+              'sidebar.placeholder': 'Markdown for the composer draft…',
               'fmt.bold': 'Bold',
               'fmt.italic': 'Italic',
               'fmt.strike': 'Strikethrough',
@@ -922,6 +1119,12 @@ window.__ModuleLoader__.load({
               'sidebar.open': '在右侧栏打开预览',
               'sidebar.title': '输入框预览',
               'sidebar.empty': '还没有可预览的内容，先在输入框里写点什么。',
+              'sidebar.edit': '编辑模式',
+              'sidebar.preview': '预览模式',
+              'sidebar.chars': '{n} 字符',
+              'sidebar.noedit': '当前会话没有可写入的输入框，无法编辑。',
+              'sidebar.unavailable': '当前组合里没有右侧栏，无法在侧栏预览。',
+              'sidebar.placeholder': '这里编辑输入框的 Markdown 草稿…',
               'fmt.bold': '粗体',
               'fmt.italic': '斜体',
               'fmt.strike': '删除线',
@@ -966,11 +1169,14 @@ window.__ModuleLoader__.load({
             tabs.register({
               id: typeId,
               kind,
-              title: () => t('sidebar.title'),
+              title: () => `${t('sidebar.title')} · v${VERSION}`,
             }),
           );
+          /* The body receives `t` both ways: the registration's locale option and
+           * an explicit injection, so a missing option can never surface raw keys. */
+          const body = (props) => h(ComposerMarkdownSidebar, { ...props, t });
           scope.effect(() =>
-            scope.slots.register({ name: 'sidebar.right.pane.tab', key: typeId }, ComposerMarkdownSidebar),
+            scope.slots.register({ name: 'sidebar.right.pane.tab', key: typeId, locale: NS }, body),
           );
           openSidebarPreview = () => {
             try {
